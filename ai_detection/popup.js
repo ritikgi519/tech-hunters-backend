@@ -1,60 +1,66 @@
 document.addEventListener('DOMContentLoaded', function() {
+    
+    // Check karein ki button exist karta hai ya nahi
     const scanBtn = document.getElementById('scanBtn');
     const resultDiv = document.getElementById('result');
 
-    scanBtn.addEventListener('click', async () => {
-        // 1. Reset UI
-        scanBtn.disabled = true;
-        scanBtn.innerText = "Scanning...";
-        scanBtn.style.backgroundColor = "#ccc";
-        resultDiv.innerHTML = "🔍 Analyzing pixels...";
-        resultDiv.className = "result"; // Reset colors
+    if (!scanBtn || !resultDiv) {
+        console.error("Error: HTML me 'scanBtn' ya 'result' ID nahi mili!");
+        return;
+    }
 
-        // 2. Get Current Tab URL
+    scanBtn.addEventListener('click', async () => {
+        // 1. Loading state dikhayein
+        resultDiv.innerText = "Scanning...";
+        resultDiv.style.color = "blue";
+        resultDiv.style.display = "block";
+
+        // 2. Current Tab ka URL nikalein
         let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
-        // 3. Extract Image URL (Agar user ne image kholi hai)
-        // Note: Hum seedha tab ka URL bhej rahe hain kyunki Google Images par tab URL hi image URL hota hai
-        let imageUrl = tab.url;
+        // Agar local file hai ya chrome setting page hai
+        if (!tab.url.startsWith('http')) {
+             resultDiv.innerText = "❌ Can't scan this page.";
+             return;
+        }
+
+        // 3. Image URL dhundne ki koshish (Simple Logic)
+        // (Hackathon ke liye hum maan rahe hain ki user image khol kar baitha hai)
+        let imageUrl = tab.url; 
+
+        console.log("Sending URL to Backend:", imageUrl);
 
         try {
-            // 4. Send to Render Server
-            // Is URL ko dhyan se check karo (vahi hona chahiye jo Render dashboard par hai)
-            const response = await fetch("https://tech-hunters-backend.onrender.com/predict", {
-                method: "POST",
+            // 4. Backend ko data bhejein
+            const response = await fetch('http://127.0.0.1:8000/detect', {
+                method: 'POST',
                 headers: {
-                    "Content-Type": "application/json"
+                    'Content-Type': 'application/json'
                 },
-                // YE PART SABSE ZAROORI HAI: Key ka naam 'url' hi hona chahiye
-                body: JSON.stringify({ url: imageUrl }) 
+                body: JSON.stringify({ url: imageUrl })
             });
 
-            if (!response.ok) {
-                throw new Error(`Server Error: ${response.status}`);
-            }
-
             const data = await response.json();
+            console.log("Backend Reply:", data);
 
-            // 5. Show Result
-            resultDiv.innerText = data.result; // "⚠️ AI GENERATED" ya "✅ REAL IMAGE"
-            
-            // Color Logic
-            if (data.color === "red") {
+            // 5. Result Update Karein (Correct Logic)
+            if (data.status === "AI GENERATED") {
+                resultDiv.innerText = "⚠️ AI GENERATED IMAGE";
                 resultDiv.style.color = "red";
-                resultDiv.style.border = "2px solid red";
-            } else {
+                resultDiv.style.fontWeight = "bold";
+            } else if (data.status === "REAL IMAGE") {
+                resultDiv.innerText = "✅ REAL IMAGE";
                 resultDiv.style.color = "green";
-                resultDiv.style.border = "2px solid green";
+                resultDiv.style.fontWeight = "bold";
+            } else {
+                resultDiv.innerText = "❓ " + (data.details || "Unknown Result");
+                resultDiv.style.color = "orange";
             }
 
         } catch (error) {
-            resultDiv.innerText = "❌ Error: " + error.message;
-            resultDiv.style.color = "red";
-        } finally {
-            // Reset Button
-            scanBtn.disabled = false;
-            scanBtn.innerText = "Scan for AI Content";
-            scanBtn.style.backgroundColor = "#4CAF50";
+            console.error("Connection Error:", error);
+            resultDiv.innerText = "❌ Server Error. Is Backend running?";
+            resultDiv.style.color = "black";
         }
     });
 });
