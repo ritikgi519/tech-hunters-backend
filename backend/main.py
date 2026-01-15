@@ -1,35 +1,52 @@
-# --- HACKATHON SPECIAL FUNCTION (AGGRESSIVE MODE) ---
-def simulate_ai_detection(url):
-    url_lower = url.lower()
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import requests
+import os
+from dotenv import load_dotenv # Env file load karne ke liye
+
+# .env file se variables load karein
+load_dotenv()
+
+app = FastAPI()
+
+# --- CORS SETTINGS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Security ke liye production me specific domain dalein
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- DATA MODEL ---
+class ImageRequest(BaseModel):
+    url: str
+
+# --- CONFIGURATION ---
+API_URL = "https://api-inference.huggingface.co/models/umm-maybe/AI-image-detector"
+HF_TOKEN = os.getenv("HF_TOKEN")  # Token ab .env file se aayega
+
+# --- LOGIC FUNCTION ---
+def query_huggingface(image_url):
+    if not HF_TOKEN:
+        return {"error": "Hugging Face Token missing. Check .env file."}
+
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    payload = {"inputs": image_url}
     
-    # List of words jo pakka AI hote hain
-    ai_keywords = [
-        'lexica', 'stablediffusion', 'dalle', 'midjourney', 'artstation', 
-        'ai', 'gen', 'bot', 'chatgpt', 'cyber', 'robot', 'future', 
-        'anime', 'cartoon', 'fantasy', 'dream', 'space', 'prompts'
-    ]
-    
-    # List of words jo pakka Real hote hain
-    real_keywords = [
-        'photo', 'camera', 'dcim', 'whatsapp', 'img', 'screenshot', 
-        'news', 'bbc', 'ndtv', 'capture', 'portrait', 'selfie'
-    ]
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload)
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
 
-    # 1. Check for AI Keywords (Sabse Pehle)
-    if any(x in url_lower for x in ai_keywords):
-        return {"result": "⚠️ AI GENERATED", "confidence": 92, "color": "red"}
+# --- API ENDPOINT ---
+@app.post("/detect")
+async def detect_ai(request: ImageRequest):
+    result = query_huggingface(request.url)
+    return result
 
-    # 2. Check for Real Keywords
-    elif any(x in url_lower for x in real_keywords):
-        return {"result": "✅ REAL IMAGE", "confidence": 88, "color": "green"}
-
-    # 3. Agar kuch samajh na aaye toh URL Hash use karo (Par AI ki taraf bias rakho)
-    else:
-        hash_object = hashlib.md5(url.encode())
-        hash_score = int(hash_object.hexdigest(), 16) % 100
-        
-        # Pehle hum 60 pe cutoff kar rahe the, ab 40 pe karenge (Zyada images Fake dikhengi)
-        if hash_score > 40: 
-            return {"result": "⚠️ AI GENERATED", "confidence": 75 + (hash_score % 20), "color": "red"}
-        else:
-            return {"result": "✅ REAL IMAGE", "confidence": 85, "color": "green"}
+@app.get("/")
+def home():
+    return {"message": "Tech Hunters Backend is Running!"}

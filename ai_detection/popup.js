@@ -1,64 +1,60 @@
-document.getElementById('scanBtn').addEventListener('click', async () => {
+document.addEventListener('DOMContentLoaded', function() {
+    const scanBtn = document.getElementById('scanBtn');
     const resultDiv = document.getElementById('result');
-    resultDiv.style.color = "blue";
-    resultDiv.innerText = "🕵️‍♂️ Image dhoond raha hoon...";
 
-    try {
+    scanBtn.addEventListener('click', async () => {
+        // 1. Reset UI
+        scanBtn.disabled = true;
+        scanBtn.innerText = "Scanning...";
+        scanBtn.style.backgroundColor = "#ccc";
+        resultDiv.innerHTML = "🔍 Analyzing pixels...";
+        resultDiv.className = "result"; // Reset colors
+
+        // 2. Get Current Tab URL
         let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
-        if (!tab) {
-            throw new Error("Koi active tab nahi mila!");
+        // 3. Extract Image URL (Agar user ne image kholi hai)
+        // Note: Hum seedha tab ka URL bhej rahe hain kyunki Google Images par tab URL hi image URL hota hai
+        let imageUrl = tab.url;
+
+        try {
+            // 4. Send to Render Server
+            // Is URL ko dhyan se check karo (vahi hona chahiye jo Render dashboard par hai)
+            const response = await fetch("https://tech-hunters-backend.onrender.com/predict", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                // YE PART SABSE ZAROORI HAI: Key ka naam 'url' hi hona chahiye
+                body: JSON.stringify({ url: imageUrl }) 
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // 5. Show Result
+            resultDiv.innerText = data.result; // "⚠️ AI GENERATED" ya "✅ REAL IMAGE"
+            
+            // Color Logic
+            if (data.color === "red") {
+                resultDiv.style.color = "red";
+                resultDiv.style.border = "2px solid red";
+            } else {
+                resultDiv.style.color = "green";
+                resultDiv.style.border = "2px solid green";
+            }
+
+        } catch (error) {
+            resultDiv.innerText = "❌ Error: " + error.message;
+            resultDiv.style.color = "red";
+        } finally {
+            // Reset Button
+            scanBtn.disabled = false;
+            scanBtn.innerText = "Scan for AI Content";
+            scanBtn.style.backgroundColor = "#4CAF50";
         }
-
-        // Script inject karke image dhoondo
-        const injectionResults = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            function: findMainImage,
-        });
-
-        // Safety Check: Kya result sahi aaya?
-        if (!injectionResults || !injectionResults[0] || !injectionResults[0].result) {
-            throw new Error("Page par koi dhang ki image nahi mili!");
-        }
-
-        const imageUrl = injectionResults[0].result;
-        resultDiv.innerText = "🧠 Analyzing: " + imageUrl.substring(0, 20) + "...";
-        
-        // Backend ko bhejo
-       const response = await fetch("https://tech-hunters-backend.onrender.com/predict", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image_url: imageUrl })
-        });
-
-        if (!response.ok) {
-            throw new Error("Python Server ne error diya!");
-        }
-
-        const data = await response.json();
-        
-        // Result Dikhao
-        resultDiv.style.color = data.color;
-        resultDiv.innerText = `${data.result} (${data.confidence}%)`;
-
-    } catch (error) {
-        console.error("Scanning Error:", error);
-        resultDiv.style.color = "red";
-        // Error screen par dikhao taaki humein pata chale
-        resultDiv.innerText = "❌ Error: " + error.message;
-    }
+    });
 });
-
-function findMainImage() {
-    const images = document.getElementsByTagName('img');
-    if (images.length === 0) return null;
-    
-    // Sabse badi image dhoondo (kam se kam 150px)
-    for (let img of images) {
-        if (img.width > 150 && img.height > 150 && img.src.startsWith('http')) {
-            return img.src;
-        }
-    }
-    // Agar badi nahi mili toh pehli valid image bhej do
-    return images[0].src;
-}
